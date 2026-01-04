@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Inversion Effect</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: transparent; /* Przezroczyste tło dla iframe */
+        }
+        
+        .chart-container {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-title {
+            text-align: center;
+            color: #2c3e50;
+            font-size: clamp(0.85em, 2.5vw, 1.1em);
+            font-weight: 600;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        
+        .legend-custom {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: clamp(0.75em, 2vw, 0.9em);
+            color: #2c3e50;
+        }
+
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .legend-color.normal { background: #6b5b95; }
+        .legend-color.inverted { background: #45b7a0; }
+        
+        .chart-wrapper {
+            position: relative;
+            flex: 1;
+            min-height: 0; /* Ważne dla flex */
+        }
+        
+        .source {
+            font-size: clamp(0.65em, 1.8vw, 0.8em);
+            color: #7f8c8d;
+            border-top: 1px solid #ecf0f1;
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+        
+        .source a {
+            color: #5b4b8a;
+            text-decoration: none;
+        }
+        
+        .source a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Tooltip */
+        .custom-tooltip {
+            position: absolute;
+            background: rgba(44, 62, 80, 0.95);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            max-width: 260px;
+            line-height: 1.4;
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .custom-tooltip.visible {
+            opacity: 1;
+        }
+        
+        .tooltip-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .tooltip-value {
+            font-size: 1.2em;
+            font-weight: 700;
+            margin: 4px 0;
+        }
+        
+        .tooltip-value.normal { color: #a89cc8; }
+        .tooltip-value.inverted { color: #7dd3c0; }
+        
+        .tooltip-description {
+            font-size: 0.85em;
+            opacity: 0.9;
+            margin-top: 6px;
+        }
+
+        /* Responsywność */
+        @media (max-width: 500px) {
+            .chart-container {
+                padding: 10px;
+            }
+            .legend-custom {
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <div class="chart-title">
+            Efekt inwersji twarzy: rozpoznawanie twarzy w różnych grupach wiekowych
+        </div>
+        
+        <div class="legend-custom">
+            <div class="legend-item">
+                <div class="legend-color normal"></div>
+                <span>Twarze normalne</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color inverted"></div>
+                <span>Twarze odwrócone</span>
+            </div>
+        </div>
+        
+        <div class="chart-wrapper">
+            <canvas id="faceChart"></canvas>
+            <div class="custom-tooltip" id="tooltip"></div>
+        </div>
+        
+        <div class="source">
+            <strong>Źródło:</strong> <a href="https://doi.org/10.1177/03010066251316178" target="_blank" rel="noopener">Civile, C., & Wang, G. (2025). Testing the own-age bias in face recognition among younger and older adults via the Face Inversion Effect. <em>Perception</em></a>
+        </div>
+    </div>
+
+    <script>
+        // === KONFIGURACJA - ŁATWA DO EDYCJI ===
+        const CONFIG = {
+            // Dane wykresu
+            labels: [
+                'Młodsi → młode twarze', 
+                'Młodsi → starsze twarze', 
+                'Starsi → młode twarze', 
+                'Starsi → starsze twarze'
+            ],
+            normalData: [1.47, 1.02, 1.47, 1.52],
+            invertedData: [0.62, 0.65, 0.69, 0.82],
+            
+            // Kolory
+            colors: {
+                normal: '#6b5b95',
+                inverted: '#45b7a0'
+            },
+            
+            // Animacja
+            animationDuration: 1500
+        };
+
+        // Dodatkowe informacje dla tooltipów
+        const tooltipInfo = {
+            'Młodsi → młode twarze': {
+                normal: 'Młodsi uczestnicy najlepiej rozpoznają twarze w swojej grupie wiekowej – klasyczny efekt "own-age bias".',
+                inverted: 'Odwrócenie twarzy znacząco utrudnia rozpoznawanie – silny efekt inwersji (Δ=0.85).'
+            },
+            'Młodsi → starsze twarze': {
+                normal: 'Młodsi uczestnicy gorzej rozpoznają starsze twarze – mniejsza ekspozycja na tę grupę wiekową.',
+                inverted: 'Mniejszy efekt inwersji (Δ=0.37) sugeruje mniej holistyczne przetwarzanie "obcych" twarzy.'
+            },
+            'Starsi → młode twarze': {
+                normal: 'Starsi uczestnicy dobrze rozpoznają młode twarze – częsty kontakt międzypokoleniowy.',
+                inverted: 'Umiarkowany efekt inwersji (Δ=0.78) dla twarzy spoza własnej grupy wiekowej.'
+            },
+            'Starsi → starsze twarze': {
+                normal: 'Najwyższy wynik (d\'=1.52) – starsi uczestnicy najlepiej rozpoznają rówieśników.',
+                inverted: 'Silne przetwarzanie holistyczne własnej grupy wiekowej (Δ=0.70).'
+            }
+        };
+
+        // Konfiguracja Chart.js
+        const ctx = document.getElementById('faceChart').getContext('2d');
+        
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: CONFIG.labels,
+                datasets: [
+                    {
+                        label: 'Twarze normalne',
+                        data: CONFIG.normalData,
+                        backgroundColor: CONFIG.colors.normal,
+                        borderRadius: 4,
+                        barPercentage: 0.7,
+                        categoryPercentage: 0.8
+                    },
+                    {
+                        label: 'Twarze odwrócone',
+                        data: CONFIG.invertedData,
+                        backgroundColor: CONFIG.colors.inverted,
+                        borderRadius: 4,
+                        barPercentage: 0.7,
+                        categoryPercentage: 0.8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: CONFIG.animationDuration,
+                    easing: 'easeOutQuart',
+                    delay: (ctx) => ctx.dataIndex * 150 + ctx.datasetIndex * 100
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: false,
+                        external: handleTooltip
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            font: { size: 10 },
+                            color: '#5a6a7a',
+                            maxRotation: 45,
+                            minRotation: 0
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: 1.8,
+                        grid: { color: '#ecf0f1' },
+                        ticks: {
+                            stepSize: 0.5,
+                            font: { size: 10 },
+                            color: '#5a6a7a'
+                        }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'valueLabels',
+                afterDatasetsDraw: function(chart) {
+                    const ctx = chart.ctx;
+                    chart.data.datasets.forEach((dataset, di) => {
+                        const meta = chart.getDatasetMeta(di);
+                        meta.data.forEach((bar, i) => {
+                            const value = dataset.data[i];
+                            ctx.save();
+                            ctx.font = 'bold 11px Segoe UI';
+                            ctx.fillStyle = 'white';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(value.toFixed(2), bar.x, bar.y + 18);
+                            ctx.restore();
+                        });
+                    });
+                }
+            }]
+        });
+
+        function handleTooltip(context) {
+            const tooltip = document.getElementById('tooltip');
+            
+            if (context.tooltip.opacity === 0) {
+                tooltip.classList.remove('visible');
+                return;
+            }
+            
+            const dataPoints = context.tooltip.dataPoints;
+            if (!dataPoints?.length) return;
+            
+            const label = dataPoints[0].label;
+            const info = tooltipInfo[label];
+            
+            let html = `<div class="tooltip-title">${label}</div>`;
+            
+            dataPoints.forEach(point => {
+                const isNormal = point.datasetIndex === 0;
+                const type = isNormal ? 'normal' : 'inverted';
+                const typeName = isNormal ? 'Twarze normalne' : 'Twarze odwrócone';
+                
+                html += `
+                    <div style="margin: 8px 0;">
+                        <strong>${typeName}:</strong>
+                        <div class="tooltip-value ${type}">d' = ${point.raw.toFixed(2)}</div>
+                        <div class="tooltip-description">${info[type]}</div>
+                    </div>
+                `;
+            });
+            
+            tooltip.innerHTML = html;
+            
+            // Pozycjonowanie
+            const chartArea = context.chart.chartArea;
+            let left = context.tooltip.caretX;
+            
+            if (left + 260 > chartArea.right) {
+                left = left - 280;
+            }
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = (context.tooltip.caretY - 10) + 'px';
+            tooltip.style.transform = 'translateY(-100%)';
+            tooltip.classList.add('visible');
+        }
+    </script>
+</body>
+</html>
